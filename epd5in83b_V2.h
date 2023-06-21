@@ -47,9 +47,10 @@ public:
     void SetLut(void);
     void DisplayFrame(const UBYTE *blackimage, const UBYTE *ryimage);
     void DisplayPictureDemo(const UBYTE *blackimage, UBYTE Block);
-    void GeneratePictureUpperHalf(const UBYTE *blackimage);
-    void GeneratePictureLowerHalf(const UBYTE *blackimage);
-    void DisplayPicture(const UBYTE *upperImage, const UBYTE *lowerImage);
+    void GeneratePictureUpperHalf(const UBYTE *blackimage, const UBYTE *ryimage);
+    void GeneratePictureLowerHalf(const UBYTE *blackimage, const UBYTE *ryimage);
+    void DisplayPicture(const UBYTE *upperImage_Layer1, const UBYTE *upperImage_Layer2, const UBYTE *lowerImage_Layer1, const UBYTE *lowerImage_Layer2);
+    void GeneratePictureUpperAndLowerHalf(const UBYTE *upperImage_Layer1, const UBYTE *upperImage_Layer2, const UBYTE *lowerImage_Layer1, const UBYTE *lowerImage_Layer2);
     void SendCommand(unsigned char command);
     void SendData(unsigned char data);
     void Sleep(void);
