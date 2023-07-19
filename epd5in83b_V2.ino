@@ -37,13 +37,13 @@
 #include <Arduino.h>
 
 // 194.400 is the amount of charracters in one full image displayed on this particular 5.83 inch Waveshare display (648x480).
-// These characters consist the same recurring 5 characters, for e.g.: "0XFF,"
+// These characters contain the same recurring 5 characters, for e.g.: "0XFF,"
 // Therefore, to create an array, that is readable by the Waveshare display, you have to extract those batches of 5 characters and transform them into a Hex-Array
 // The Waveshare display can only receive a specific amount of bytes at a time (194.000/5 = 38.000 is too big); Therefore the whole picture has to be splitted into two
-// 194.400 / 2 = 97.200 -
+// 194.400 / 2 = 97.200
 // 97.200 / 5 = 19.440 -> size of the resulting array of a half image
 // Make a buffer, so that the ESP32 won't crash during the Hex-Array transformation; Use a high divident of 97.200
-// 97.200 / 3.240 = 30 -> there need to be 30 foor loops
+// 97.200 / 3.240 = 30 -> there need to be 30 for loops
 // 3.240 / 5 = 648 -> each for loop needs to have 648 iterations
 int chars = 97200;
 
@@ -58,39 +58,90 @@ const int MAX_RESPONSE_LENGTH = responseLength + 1;
 
 // WIFI and server configuration
 const char* ssid = "sum";
-
 const char* password = "PSK-22050-wl-xr";
 
 String servername = "https://ps-housetech.uni-muenster.de/api/eink";
 
-// the following variables are unsigned longs because the time, measured in milliseconds, will quickly become a bigger number than can be stored in an int.
+// Converion factor into seconds
+#define uS_TO_S_FACTOR 1000000
+// Amount of seconds
+#define TIME_TO_SLEEP 5
 
-unsigned long lastTime = 0;
+RTC_DATA_ATTR int bootCount = 0;
 
-// Set timer to 5 seconds (5000)
+void print_wakeup_reason() {
+  esp_sleep_wakeup_cause_t wake_up_source;
 
-unsigned long timerDelay = 5000;
+  wake_up_source = esp_sleep_get_wakeup_cause();
 
+  switch (wake_up_source) {
+    case ESP_SLEEP_WAKEUP_EXT0: Serial.println("Wake-up from external signal with RTC_IO"); break;
+    case ESP_SLEEP_WAKEUP_EXT1: Serial.println("Wake-up from external signal with RTC_CNTL"); break;
+    case ESP_SLEEP_WAKEUP_TIMER: Serial.println("Wake up caused by a timer"); break;
+    case ESP_SLEEP_WAKEUP_TOUCHPAD: Serial.println("Wake up caused by a touchpad"); break;
+    default: Serial.printf("Wake up not caused by Deep Sleep: %d\n", wake_up_source); break;
+  }
+}
 
+void doRestart(){
+  //Timer Configuration
+    esp_sleep_enable_timer_wakeup(uS_TO_S_FACTOR);
+    Serial.println("ESP32 wake-up in " + String(TIME_TO_SLEEP) + " seconds");
+
+    Serial.println("WiFi Disconnected");
+    Serial.println("Goes into Deep Sleep mode");
+    Serial.println("----------------------");
+    delay(100);
+    esp_deep_sleep_start();
+    Serial.println("This will never be displayed");
+}
 
 void setup() {
-
   Serial.begin(115200);
-
+  int wifiCount = 0;
   // Setup Wifi
   WiFi.begin(ssid, password);
 
   while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.println("Connecting to WiFi..");
+    // Try to connect to the WiFi ten times, if it doesn't work, restart the ESP32
+    if (wifiCount < 10) {
+      delay(500);
+      Serial.println("Connecting to WiFi..");
+    } else {
+      // Go in Deep Sleep mode
+      ++bootCount;
+      Serial.println("----------------------");
+      Serial.println(String(bootCount) + "th Boot ");
+
+      // Displays the reason for the wake up
+      print_wakeup_reason();
+
+      //Timer Configuration
+      esp_sleep_enable_timer_wakeup(uS_TO_S_FACTOR);
+      Serial.println("ESP32 wake-up in 1 second");
+      Serial.println("Goes into Deep Sleep mode");
+      Serial.println("----------------------");
+      delay(100);
+      esp_deep_sleep_start();
+    }
+    wifiCount++;
   }
   Serial.println("Connected to the WiFi network");
 }
 
 void loop() {
+  ++bootCount;
+  Serial.println("----------------------");
+  Serial.println(String(bootCount) + "th Boot ");
+
+  // Displays the reason for the wake up
+  print_wakeup_reason();
+
+  //Timer Configuration
+  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+  Serial.println("ESP32 wake-up in " + String(TIME_TO_SLEEP) + " seconds");
 
   // Check WiFi connection status
-
   if (WiFi.status() == WL_CONNECTED) {
 
     HTTPClient http;
@@ -111,13 +162,13 @@ void loop() {
       // Get the HTTP response stream
       WiFiClient* stream = http.getStreamPtr();
 
-      // count for each for loop
+      // Count for each for loop
       int count1 = 0;
       int count2 = 0;
       int count3 = 0;
       int count4 = 0;
 
-      // count inside each for loop
+      // Count inside each for loop
       int imageDataCount1 = 0;
       int imageDataCount2 = 0;
       int imageDataCount3 = 0;
@@ -129,7 +180,7 @@ void loop() {
       uint8_t* upperImage_Layer2 = new uint8_t[19446];
       uint8_t* lowerImage_Layer2 = new uint8_t[19446];
 
-      // Getting the characters from the server and saving them into the images and layers
+      // Get the characters from the server and save them into the images and layers
       while (stream->available()) {
         bytesRead = stream->readBytes(responseBuffer, sizeof(responseBuffer) - 1);
         responseBuffer[bytesRead] = '\0';  // Null-terminate the buffer
@@ -140,16 +191,14 @@ void loop() {
             hex[0] = responseBuffer[j * 5 + 2];
             hex[1] = responseBuffer[j * 5 + 3];
             hex[2] = '\0';
-
             /*
-            // for debugging
+            // Debug
             Serial.print(hex[0]);
             Serial.print(hex[1]);
             Serial.print(hex[2]);
             Serial.println(j);
             Serial.println(counter);
             */
-
             lowerImage_Layer2[imageDataCount4] = strtol(hex, nullptr, 16);
             imageDataCount4++;
           }
@@ -163,7 +212,7 @@ void loop() {
             hex[1] = responseBuffer[j * 5 + 3];
             hex[2] = '\0';
             /*
-            // for debugging
+            // Debug
             Serial.print(hex[0]);
             Serial.print(hex[1]);
             Serial.print(hex[2]);
@@ -183,7 +232,7 @@ void loop() {
             hex[1] = responseBuffer[j * 5 + 3];
             hex[2] = '\0';
             /*
-            // for debugging
+            // Debug
             Serial.print(hex[0]);
             Serial.print(hex[1]);
             Serial.print(hex[2]);
@@ -196,14 +245,13 @@ void loop() {
           count2++;
 
         } else {
-
           for (size_t j = 0; j < loopSize; j++) {
             char hex[3];
             hex[0] = responseBuffer[j * 5 + 2];
             hex[1] = responseBuffer[j * 5 + 3];
             hex[2] = '\0';
             /*
-            // for debugging
+            // Debug
             Serial.print(hex[0]);
             Serial.print(hex[1]);
             Serial.print(hex[2]);
@@ -216,54 +264,38 @@ void loop() {
           count1++;
         }
       }
-
+      /*
+      // Debug
       Serial.print("Amount of characters from server: ");
       Serial.println(count1 * loopSize * 5 + count2 * loopSize * 5 + count3 * loopSize * 5 + count4 * loopSize * 5);
       Serial.print("Memory After Hex: ");
       Serial.println(ESP.getFreeHeap());
-
-
+      */
       // Initialize the e-Paper display
       Epd epd;
 
       if (epd.Init() != 0) {
 
         Serial.print("ERROR: e-Paper init failed");
-
-        //delete[] imageData;  // Free allocated memory
         return;
       }
 
+      // Refresh display
       epd.Clear();
 
       // Display the image
-      epd.DisplayPicture(upperImage_Layer1, upperImage_Layer2, lowerImage_Layer1, lowerImage_Layer2);
+      epd.DisplayPicture(LAYER1_TOP, LAYER2_TOP, LAYER1_BOTTOM, LAYER2_BOTTOM);
+      // Close the connection
+      http.end();
 
-      delay(25000);
-      epd.Clear();
-
-      // Put the display to sleep
-      epd.Sleep();
-
+      Serial.println("Goes into Deep Sleep mode");
+      Serial.println("----------------------");
+      delay(100);
+      esp_deep_sleep_start();
     }
-
-    else {
-
-      Serial.print("Error code: ");
-
-      Serial.println(httpResponseCode);
-    }
-    // Close the connection
-    http.end();
   }
-
   else {
-
-    Serial.println("WiFi Disconnected");
+    doRestart();
   }
-
-  lastTime = millis();
-
-  // Delay before the next iteration
-  delay(timerDelay);
+  doRestart();
 }
