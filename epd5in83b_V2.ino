@@ -65,7 +65,7 @@ String servername = "https://ps-housetech.uni-muenster.de/api/eink";
 // Converion factor into seconds
 #define uS_TO_S_FACTOR 1000000
 // Amount of seconds
-#define TIME_TO_SLEEP 5
+#define TIME_TO_SLEEP 30
 
 RTC_DATA_ATTR int bootCount = 0;
 
@@ -93,7 +93,6 @@ void doRestart(){
     Serial.println("----------------------");
     delay(100);
     esp_deep_sleep_start();
-    Serial.println("This will never be displayed");
 }
 
 void setup() {
@@ -108,21 +107,7 @@ void setup() {
       delay(500);
       Serial.println("Connecting to WiFi..");
     } else {
-      // Go in Deep Sleep mode
-      ++bootCount;
-      Serial.println("----------------------");
-      Serial.println(String(bootCount) + "th Boot ");
-
-      // Displays the reason for the wake up
-      print_wakeup_reason();
-
-      //Timer Configuration
-      esp_sleep_enable_timer_wakeup(uS_TO_S_FACTOR);
-      Serial.println("ESP32 wake-up in 1 second");
-      Serial.println("Goes into Deep Sleep mode");
-      Serial.println("----------------------");
-      delay(100);
-      esp_deep_sleep_start();
+      doRestart();
     }
     wifiCount++;
   }
@@ -197,7 +182,7 @@ void loop() {
             Serial.print(hex[1]);
             Serial.print(hex[2]);
             Serial.println(j);
-            Serial.println(counter);
+            Serial.println(count4);
             */
             lowerImage_Layer2[imageDataCount4] = strtol(hex, nullptr, 16);
             imageDataCount4++;
@@ -217,7 +202,7 @@ void loop() {
             Serial.print(hex[1]);
             Serial.print(hex[2]);
             Serial.println(j);
-            Serial.println(counter);
+            Serial.println(count3);
             */
             upperImage_Layer2[imageDataCount3] = strtol(hex, nullptr, 16);
             imageDataCount3++;
@@ -237,7 +222,7 @@ void loop() {
             Serial.print(hex[1]);
             Serial.print(hex[2]);
             Serial.println(j);
-            Serial.println(counter);
+            Serial.println(count2);
             */
             lowerImage_Layer1[imageDataCount2] = strtol(hex, nullptr, 16);
             imageDataCount2++;
@@ -256,7 +241,7 @@ void loop() {
             Serial.print(hex[1]);
             Serial.print(hex[2]);
             Serial.println(j);
-            Serial.println(counter);
+            Serial.println(count1);
             */
             upperImage_Layer1[imageDataCount1] = strtol(hex, nullptr, 16);
             imageDataCount1++;
@@ -284,7 +269,7 @@ void loop() {
       epd.Clear();
 
       // Display the image
-      epd.DisplayPicture(LAYER1_TOP, LAYER2_TOP, LAYER1_BOTTOM, LAYER2_BOTTOM);
+      epd.DisplayPicture(upperImage_Layer1, upperImage_Layer2, lowerImage_Layer1, lowerImage_Layer2);
       // Close the connection
       http.end();
 
