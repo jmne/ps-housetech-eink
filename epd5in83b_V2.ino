@@ -36,6 +36,8 @@
 
 #include <Arduino.h>
 
+#include "time.h"
+
 // 194.400 is the amount of charracters in one full image displayed on this particular 5.83 inch Waveshare display (648x480).
 // These characters contain the same recurring 5 characters, for e.g.: "0XFF,"
 // Therefore, to create an array, that is readable by the Waveshare display, you have to extract those batches of 5 characters and transform them into a Hex-Array
@@ -60,12 +62,23 @@ const int MAX_RESPONSE_LENGTH = responseLength + 1;
 const char* ssid = "sum";
 const char* password = "PSK-22050-wl-xr";
 
-String servername = "https://ps-housetech.uni-muenster.de/api/eink";
+const char* ntpServer = "pool.ntp.org";
+// Timeszone
+const long gmtOffset_sec = 2;
+// Hour off because of energy saving reasons
+const int daylightOffset_sec = 3600;
 
+String room = "008";
+
+String servername = "https://ps-housetech.uni-muenster.de:444/api/eink/" + room;
+
+// Converion factor into minutes, ULL to force bigger values than 2147483647 in esp_sleep_enable_timer_wakeup()
+#define uS_TO_S_FACTOR 60000000ULL
 // Converion factor into seconds
-#define uS_TO_S_FACTOR 1000000
-// Amount of seconds
-#define TIME_TO_SLEEP 30
+//#define uS_TO_S_FACTOR 1000000ULL
+
+int sleepTime;
+int minutesOff;
 
 RTC_DATA_ATTR int bootCount = 0;
 
@@ -83,16 +96,46 @@ void print_wakeup_reason() {
   }
 }
 
-void doRestart(){
+void doRestart() {
   //Timer Configuration
-    esp_sleep_enable_timer_wakeup(uS_TO_S_FACTOR);
-    Serial.println("ESP32 wake-up in " + String(TIME_TO_SLEEP) + " seconds");
+  esp_sleep_enable_timer_wakeup(1000000);
+  Serial.println("ESP32 wake-up in 1 second");
 
-    Serial.println("WiFi Disconnected");
-    Serial.println("Goes into Deep Sleep mode");
-    Serial.println("----------------------");
-    delay(100);
-    esp_deep_sleep_start();
+  Serial.println("WiFi Disconnected");
+  Serial.println("Goes into Deep Sleep mode");
+  Serial.println("----------------------");
+  delay(100);
+  esp_deep_sleep_start();
+}
+
+// Wieso das hier? Timer
+void calcDifferenceTime() {
+  Serial.println("--- calcDifferenceTime ---");
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("Failed to obtain time");
+    return;
+  }
+  Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+
+  // Calculate the sleepTime
+  minutesOff = timeinfo.tm_min;
+  // Its 20:00
+  // between 18:00-00:00
+  if (timeinfo.tm_hour >= 18) {
+    sleepTime = 24 - timeinfo.tm_hour;
+  }
+
+  else if (timeinfo.tm_hour < 6) {
+    sleepTime = 24 - timeinfo.tm_hour;
+  } else {
+    //Its for whatever reason after 06:00
+    // calculate hours between time and 18:00
+    sleepTime = 18 - timeinfo.tm_hour;
+  }
+  Serial.println("SleepTime, minutesOff");
+  Serial.println(sleepTime);
+  Serial.println(minutesOff);
 }
 
 void setup() {
@@ -112,6 +155,10 @@ void setup() {
     wifiCount++;
   }
   Serial.println("Connected to the WiFi network");
+
+  // Timer  holt Date und Time vom Timeserver
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  calcDifferenceTime();
 }
 
 void loop() {
@@ -122,9 +169,13 @@ void loop() {
   // Displays the reason for the wake up
   print_wakeup_reason();
 
+  int adjustedSleepTime;
+
+  adjustedSleepTime = (sleepTime * 60) - minutesOff;
+
   //Timer Configuration
-  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
-  Serial.println("ESP32 wake-up in " + String(TIME_TO_SLEEP) + " seconds");
+  esp_sleep_enable_timer_wakeup(adjustedSleepTime * uS_TO_S_FACTOR);
+  Serial.println("ESP32 wake-up in " + String(adjustedSleepTime) + " minutes");
 
   // Check WiFi connection status
   if (WiFi.status() == WL_CONNECTED) {
@@ -278,8 +329,7 @@ void loop() {
       delay(100);
       esp_deep_sleep_start();
     }
-  }
-  else {
+  } else {
     doRestart();
   }
   doRestart();
