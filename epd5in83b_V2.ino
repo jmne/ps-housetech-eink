@@ -38,6 +38,8 @@
 
 #include "time.h"
 
+#include "imagedata.h"
+
 // 194.400 is the amount of charracters in one full image displayed on this particular 5.83 inch Waveshare display (648x480).
 // These characters contain the same recurring 5 characters, for e.g.: "0XFF,"
 // Therefore, to create an array, that is readable by the Waveshare display, you have to extract those batches of 5 characters and transform them into a Hex-Array
@@ -68,7 +70,7 @@ const long gmtOffset_sec = 2;
 // Hour off because of energy saving reasons
 const int daylightOffset_sec = 3600;
 
-String room = "008";
+String room = "320";
 
 String servername = "https://ps-housetech.uni-muenster.de:444/api/eink/" + room;
 
@@ -78,9 +80,10 @@ String servername = "https://ps-housetech.uni-muenster.de:444/api/eink/" + room;
 //#define uS_TO_S_FACTOR 1000000ULL
 
 int sleepTime;
-int minutesOff;
+int adjustedSleepTime;
 
 RTC_DATA_ATTR int bootCount = 0;
+RTC_DATA_ATTR bool cleared = false;
 
 void print_wakeup_reason() {
   esp_sleep_wakeup_cause_t wake_up_source;
@@ -108,38 +111,48 @@ void doRestart() {
   esp_deep_sleep_start();
 }
 
+void calcAdjustedSleeptime() {
+  adjustedSleepTime = (sleepTime * 60);
+}
+
+
+
 // Wieso das hier? Timer
 void calcDifferenceTime() {
-  Serial.println("--- calcDifferenceTime ---");
+  Serial.println("--- calcDifferenceTime(): Start ---");
   struct tm timeinfo;
   if (!getLocalTime(&timeinfo)) {
     Serial.println("Failed to obtain time");
     return;
   }
   Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+  // if ESP32 woke up early
+  if (timeinfo.tm_hour < 6) {
+    // Make sure, it sleeps
+    sleepTime = 6 - timeinfo.tm_hour;
 
-  // Calculate the sleepTime
-  minutesOff = timeinfo.tm_min;
-  // Its 20:00
-  // between 18:00-00:00
-  if (timeinfo.tm_hour >= 18) {
-    sleepTime = 24 - timeinfo.tm_hour;
-  }
+    calcAdjustedSleeptime();
 
-  else if (timeinfo.tm_hour < 6) {
-    sleepTime = 24 - timeinfo.tm_hour;
+    // Skip Picture generation
+    esp_sleep_enable_timer_wakeup(adjustedSleepTime * uS_TO_S_FACTOR);
+    Serial.println("ESP32 wake-up in " + String(adjustedSleepTime) + " minutes");
+
+    Serial.println("WiFi Disconnected");
+    Serial.println("Goes into Deep Sleep mode");
+    Serial.println("----------------------");
+    delay(100);
+    esp_deep_sleep_start();
   } else {
-    //Its for whatever reason after 06:00
-    // calculate hours between time and 18:00
-    sleepTime = 18 - timeinfo.tm_hour;
+    // If it woke up after 06:00, go to 07:00, because of possible time shift and minute offset
+    sleepTime = 24 - timeinfo.tm_hour + 7;
   }
-  Serial.println("SleepTime, minutesOff");
-  Serial.println(sleepTime);
-  Serial.println(minutesOff);
+  Serial.println("Calculated sleepTime: " + String(sleepTime) + " hours");
+  Serial.println("--- calcDifferenceTime(): Finished ---");
 }
 
 void setup() {
   Serial.begin(115200);
+  Serial.println("--- setup(): Start ---");
   int wifiCount = 0;
   // Setup Wifi
   WiFi.begin(ssid, password);
@@ -159,19 +172,19 @@ void setup() {
   // Timer  holt Date und Time vom Timeserver
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   calcDifferenceTime();
+  Serial.println("--- setup(): Finished ---");
 }
 
 void loop() {
   ++bootCount;
   Serial.println("----------------------");
+  Serial.println("--- loop(): Start ---");
   Serial.println(String(bootCount) + "th Boot ");
 
   // Displays the reason for the wake up
   print_wakeup_reason();
 
-  int adjustedSleepTime;
-
-  adjustedSleepTime = (sleepTime * 60) - minutesOff;
+  calcAdjustedSleeptime();
 
   //Timer Configuration
   esp_sleep_enable_timer_wakeup(adjustedSleepTime * uS_TO_S_FACTOR);
@@ -187,7 +200,7 @@ void loop() {
     // Send HTTP GET request
     int httpResponseCode = http.GET();
 
-    if (httpResponseCode > 0) {
+    if (httpResponseCode > 0 && httpResponseCode <= 200) {
       Serial.print("HTTP Response code: ");
       Serial.println(httpResponseCode);
 
@@ -323,14 +336,47 @@ void loop() {
       epd.DisplayPicture(upperImage_Layer1, upperImage_Layer2, lowerImage_Layer1, lowerImage_Layer2);
       // Close the connection
       http.end();
+      cleared = false;
 
       Serial.println("Goes into Deep Sleep mode");
+      Serial.println("--- loop(): Finished ---");
+      Serial.println("----------------------");
+      delay(100);
+      esp_deep_sleep_start();
+    }
+    // If httpResponseCode > 200, it's most likely 500. This could be due to a slow response of the server
+    // The server needs to generate the displayed image first. Therefore go into deep sleep for 20 seconds.
+    else {
+      // If the Server is not reachable for long term and the display cannot update its picture, clear the picture, so that the display doesn't get damaged.
+      if (cleared == false) {
+        Epd epd;
+
+        if (epd.Init() != 0) {
+
+          Serial.print("ERROR: e-Paper init failed");
+          return;
+        }
+
+        // Refresh display
+        epd.Clear();
+        cleared = true;
+      }
+
+      //Timer Configuration
+      esp_sleep_enable_timer_wakeup(20 * 1000000);
+      Serial.println("HTTP response: " + String(httpResponseCode) + ". Therefore ESP32 wake-up in 20 seconds");
+
+      Serial.println("WiFi Disconnected");
+      Serial.println("Goes into Deep Sleep mode");
+      Serial.println("--- loop(): Finished ---");
       Serial.println("----------------------");
       delay(100);
       esp_deep_sleep_start();
     }
   } else {
+    Serial.println("--- loop(): Finished ---");
     doRestart();
   }
+  Serial.println("--- loop(): Finished ---");
   doRestart();
 }
