@@ -64,15 +64,16 @@ const int MAX_RESPONSE_LENGTH = responseLength + 1;
 const char* ssid = "sum";
 const char* password = "PSK-22050-wl-xr";
 
+String room = "320";
+String servername = "https://ps-housetech.uni-muenster.de:444/api/eink/" + room;
+
+//Time server
 const char* ntpServer = "pool.ntp.org";
+
 // Timeszone
 const long gmtOffset_sec = 2;
 // Hour off because of energy saving reasons
 const int daylightOffset_sec = 3600;
-
-String room = "320";
-
-String servername = "https://ps-housetech.uni-muenster.de:444/api/eink/" + room;
 
 // Converion factor into minutes, ULL to force bigger values than 2147483647 in esp_sleep_enable_timer_wakeup()
 #define uS_TO_S_FACTOR 60000000ULL
@@ -111,13 +112,12 @@ void doRestart() {
   esp_deep_sleep_start();
 }
 
+// Turn hours into minutes
 void calcAdjustedSleeptime() {
   adjustedSleepTime = (sleepTime * 60);
 }
 
-
-
-// Wieso das hier? Timer
+// Calculate time until next refresh
 void calcDifferenceTime() {
   Serial.println("--- calcDifferenceTime(): Start ---");
   struct tm timeinfo;
@@ -153,8 +153,9 @@ void calcDifferenceTime() {
 void setup() {
   Serial.begin(115200);
   Serial.println("--- setup(): Start ---");
-  int wifiCount = 0;
+  
   // Setup Wifi
+  int wifiCount = 0;
   WiFi.begin(ssid, password);
 
   while (WiFi.status() != WL_CONNECTED) {
@@ -169,7 +170,7 @@ void setup() {
   }
   Serial.println("Connected to the WiFi network");
 
-  // Timer  holt Date und Time vom Timeserver
+  // Get time from Timeserver
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   calcDifferenceTime();
   Serial.println("--- setup(): Finished ---");
@@ -320,6 +321,7 @@ void loop() {
       Serial.print("Memory After Hex: ");
       Serial.println(ESP.getFreeHeap());
       */
+      
       // Initialize the e-Paper display
       Epd epd;
 
